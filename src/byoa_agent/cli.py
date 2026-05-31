@@ -41,7 +41,12 @@ def main(argv: list[str] | None = None) -> int:
             log_path.unlink()
         system_prompt = read_prompt_file(PROJECT_ROOT / "prompts" / "system.md", SYSTEM_PROMPT)
         demo_prompt = read_prompt_file(PROJECT_ROOT / "prompts" / "demo.md", DEMO_PROMPT)
-        agent = CourseAgent(config, log_path=log_path, system_prompt=system_prompt)
+        agent = CourseAgent(
+            config,
+            log_path=log_path,
+            system_prompt=system_prompt,
+            project_root=PROJECT_ROOT,
+        )
         prompt = demo_prompt if args.command == "demo" else args.prompt
         output = agent.run(prompt)
         report_path = save_report_draft(PROJECT_ROOT, output)

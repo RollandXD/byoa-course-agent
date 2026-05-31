@@ -28,10 +28,22 @@ class ToolSchemaTests(unittest.TestCase):
         self.assertIn("extract_pptx_text", names)
         self.assertIn("extract_docx_text", names)
         self.assertIn("search_extracted_context", names)
+        self.assertIn("list_project_files", names)
         for schema in schemas:
             self.assertEqual(schema["type"], "function")
             self.assertIn("description", schema["function"])
             self.assertIn("parameters", schema["function"])
+
+    def test_project_files_tool_lists_repository_artifacts(self):
+        tools = CourseAgentTools(COURSE_ROOT, project_root=ROOT)
+
+        result = tools.list_project_files({"max_depth": 3})
+        payload = json.loads(result)
+        paths = {item["path"] for item in payload["files"]}
+
+        self.assertIn("README.md", paths)
+        self.assertIn("prompts/system.md", paths)
+        self.assertIn("src/byoa_agent/tools.py", paths)
 
     def test_tools_reject_paths_outside_workspace(self):
         tools = CourseAgentTools(COURSE_ROOT)
@@ -66,4 +78,3 @@ class ToolLoggingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

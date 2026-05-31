@@ -12,11 +12,12 @@
 - **Context Integration (MCP or similar)**：使用 MCP 或标准 LLM function calling，把模型和本地环境/API 连接起来。
 - **Vibe Coding Constraint**：使用 AI 快速生成样板代码，把注意力放在 agent 的系统提示词和编排循环上。
 
-本项目采用 **DeepSeek OpenAI-compatible Function Calling** 作为 MCP-like context bridge，并提供四个本地工具：
+本项目采用 **DeepSeek OpenAI-compatible Function Calling** 作为 MCP-like context bridge，并提供五个本地工具：
 
 | Tool | Purpose |
 | --- | --- |
 | `list_workspace_files` | 列出可读取的课程资料文件 |
+| `list_project_files` | 列出本项目仓库文件，帮助 agent 检查交付物 |
 | `extract_pptx_text` | 从 PPTX 课件中按页抽取文本 |
 | `extract_docx_text` | 从 DOCX 实验报告中抽取段落文本 |
 | `search_extracted_context` | 在已加载资料中搜索关键词证据 |
@@ -110,4 +111,3 @@ byoa-course-agent/
 ## Reflection Seed
 
 报告反思可以围绕一个具体技术障碍写：最初计划使用 MCP，但为了降低协议调试风险，最终采用 DeepSeek 的标准 function calling。AI 在设计工具参数时容易把路径权限、日志证据和课件真实措辞想得过于理想化，因此通过白名单路径校验、JSONL 日志和测试用例把这些问题固定下来。
-

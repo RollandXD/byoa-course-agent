@@ -36,10 +36,11 @@ class CourseAgent:
         config: AgentConfig,
         log_path: Path | None = None,
         system_prompt: str = SYSTEM_PROMPT,
+        project_root: Path | None = None,
     ) -> None:
         self.config = config
         self.client = DeepSeekClient(config.api_key, config.base_url, config.model)
-        self.tools = CourseAgentTools(config.workspace, log_path=log_path)
+        self.tools = CourseAgentTools(config.workspace, log_path=log_path, project_root=project_root)
         self.system_prompt = system_prompt
 
     def run(self, user_prompt: str, max_turns: int = 8) -> str:

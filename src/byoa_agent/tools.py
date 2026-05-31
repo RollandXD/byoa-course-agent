@@ -46,6 +46,19 @@ def create_tool_schemas() -> list[dict]:
             ["pattern"],
         ),
         _schema(
+            "list_project_files",
+            "List repository files for the implemented BYOA agent project.",
+            {
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum repository path depth to include.",
+                    "minimum": 1,
+                    "maximum": 5,
+                }
+            },
+            ["max_depth"],
+        ),
+        _schema(
             "extract_pptx_text",
             "Extract ordered slide text from a PPTX course material file.",
             {"path": {"type": "string", "description": "Workspace-relative PPTX path."}},
@@ -78,16 +91,22 @@ def create_tool_schemas() -> list[dict]:
 class CourseAgentTools:
     workspace: Path
     log_path: Path | None = None
+    project_root: Path | None = None
     extracted_context: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.workspace = self.workspace.resolve()
+        if self.project_root is None:
+            self.project_root = Path.cwd().resolve()
+        else:
+            self.project_root = self.project_root.resolve()
         if self.log_path is not None:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def dispatch(self, name: str, arguments: dict) -> str:
         registry: dict[str, Callable[[dict], str]] = {
             "list_workspace_files": self.list_workspace_files,
+            "list_project_files": self.list_project_files,
             "extract_pptx_text": self.extract_pptx_text,
             "extract_docx_text": self.extract_docx_text,
             "search_extracted_context": self.search_extracted_context,
@@ -109,6 +128,23 @@ class CourseAgentTools:
                 )
         result = json.dumps({"files": files}, ensure_ascii=False, indent=2)
         self._log("list_workspace_files", arguments, "ok", result)
+        return result
+
+    def list_project_files(self, arguments: dict) -> str:
+        max_depth = int(arguments.get("max_depth", 3))
+        ignored_dirs = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache"}
+        files = []
+        assert self.project_root is not None
+        for path in sorted(self.project_root.rglob("*")):
+            relative = path.relative_to(self.project_root)
+            if any(part in ignored_dirs for part in relative.parts):
+                continue
+            if len(relative.parts) > max_depth:
+                continue
+            if path.is_file():
+                files.append({"path": relative.as_posix(), "size_bytes": path.stat().st_size})
+        result = json.dumps({"files": files}, ensure_ascii=False, indent=2)
+        self._log("list_project_files", arguments, "ok", result)
         return result
 
     def extract_pptx_text(self, arguments: dict) -> str:
@@ -178,4 +214,3 @@ class CourseAgentTools:
         }
         with self.log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
