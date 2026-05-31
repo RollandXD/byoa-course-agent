@@ -1,0 +1,11 @@
+[project]
+name = "byoa-course-agent"
+version = "0.1.0"
+description = "A DeepSeek function-calling course task agent for the BYOA experiment."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.byoa-agent]
+workspace = ".."
+
