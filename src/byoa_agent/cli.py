@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        config = AgentConfig.from_env(DEFAULT_WORKSPACE)
+        config = AgentConfig.from_env(DEFAULT_WORKSPACE, env_file=PROJECT_ROOT / ".env")
         log_path = default_run_log_path(PROJECT_ROOT)
         if log_path.exists():
             log_path.unlink()

@@ -28,6 +28,17 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.base_url, "https://api.deepseek.com")
         self.assertEqual(config.model, "deepseek-v4-flash")
 
+    def test_config_can_load_key_from_dotenv_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text("DEEPSEEK_API_KEY=file-key\nDEEPSEEK_MODEL=custom-model\n", encoding="utf-8")
+
+            with patch.dict(os.environ, {}, clear=True):
+                config = AgentConfig.from_env(ROOT.parent, env_file=env_file)
+
+        self.assertEqual(config.api_key, "file-key")
+        self.assertEqual(config.model, "custom-model")
+
 
 class DeepSeekClientTests(unittest.TestCase):
     def test_client_builds_openai_compatible_tool_request(self):
