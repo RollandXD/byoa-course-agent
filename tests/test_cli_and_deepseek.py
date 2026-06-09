@@ -126,6 +126,22 @@ class CliSmokeTests(unittest.TestCase):
         self.assertIn("BYOA Course Agent", result.stdout)
         self.assertIn("/tools", result.stdout)
 
+    def test_report_command_runs_without_api_key(self):
+        env = os.environ.copy()
+        env["DEEPSEEK_API_KEY"] = ""
+
+        result = subprocess.run(
+            [sys.executable, "-m", "byoa_agent", "report"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            env=env,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Agent 简介", result.stdout)
+
 
 class ReportingTests(unittest.TestCase):
     def test_report_draft_is_saved_with_title(self):
@@ -136,6 +152,18 @@ class ReportingTests(unittest.TestCase):
             self.assertEqual(path.name, "experiment2-draft.md")
             self.assertIn("# Experiment 2 BYOA Report Draft", text)
             self.assertIn("Requirement summary", text)
+
+    def test_report_materials_include_required_template_sections(self):
+        from byoa_agent.reporting import generate_report_materials
+        from byoa_agent.tools import CourseAgentTools
+
+        text = generate_report_materials(ROOT, CourseAgentTools(ROOT.parent, project_root=ROOT))
+
+        self.assertIn("Agent 简介", text)
+        self.assertIn("运行说明", text)
+        self.assertIn("AI 使用反思", text)
+        self.assertIn("截图建议", text)
+        self.assertIn("DeepSeek Function Calling", text)
 
 
 if __name__ == "__main__":
