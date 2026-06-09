@@ -33,7 +33,10 @@ class FakeAgent:
         self.cleared = True
 
     def context_stats(self) -> dict:
-        return {"messages": 3, "approx_chars": 120}
+        return {"messages": 3, "approx_chars": 120, "max_chars": 120000}
+
+    def compact_now(self) -> dict:
+        return {"compacted": 2, "messages": 3, "approx_chars": 80, "max_chars": 120000}
 
 
 def make_session(agent=None, gate=None) -> ChatSession:
@@ -121,6 +124,44 @@ class ChatSessionTests(unittest.TestCase):
         session.handle_line("你好")
 
         self.assertIn("DEEPSEEK_API_KEY", "\n".join(session.output))
+
+    def test_slash_compact_reports_compression(self):
+        session = make_session(agent=FakeAgent())
+
+        session.handle_line("/compact")
+
+        self.assertIn("已压缩 2 条工具输出", "\n".join(session.output))
+
+    def test_at_mention_attaches_file_content(self):
+        agent = FakeAgent()
+        session = make_session(agent=agent)
+
+        session.handle_line("@README.md 帮我总结这份文档")
+
+        self.assertIn("[附加文件 README.md", agent.turns[0])
+        self.assertIn("BYOA", agent.turns[0])
+        self.assertIn("📎 已附加 README.md", "\n".join(session.output))
+
+    def test_bang_runs_shell_command_directly(self):
+        session = make_session()
+
+        session.handle_line("!echo shell-passthrough")
+
+        output = "\n".join(session.output)
+        self.assertIn("shell-passthrough", output)
+        self.assertIn("(exit 0)", output)
+
+    def test_keyboard_interrupt_during_turn_is_reported_not_fatal(self):
+        class InterruptingAgent(FakeAgent):
+            def run_turn(self, user_input: str) -> str:
+                raise KeyboardInterrupt
+
+        session = make_session(agent=InterruptingAgent())
+
+        keep_running = session.handle_line("会被打断的问题")
+
+        self.assertTrue(keep_running)
+        self.assertIn("已中断", "\n".join(session.output))
 
     def test_slash_exit_stops_loop(self):
         session = make_session()

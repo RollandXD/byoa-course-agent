@@ -14,7 +14,7 @@ This repository implements Experiment 2, "Bring Your Own Agent" (BYOA), for the 
 - `src/byoa_agent/deepseek.py`: OpenAI-compatible client, including SSE streaming with tool_calls fragment reassembly.
 - `src/byoa_agent/tools/`: registry-decorated toolbox; `general.py` holds coding tools, `course.py` holds course skills.
 - `src/byoa_agent/permissions.py`: y/n/always gate for write_file, edit_file, and run_command.
-- `src/byoa_agent/chat.py` + `ui.py`: interactive shell, slash commands, and Claude Code style rendering.
+- `src/byoa_agent/chat.py` + `ui.py`: interactive shell with slash commands, `@file` mentions, `!cmd` passthrough, streaming markdown rendering, spinner, diff previews, and turn stats.
 
 ## Constraints
 - Keep the agent single-purpose: it should help understand and complete the BYOA experiment.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import fnmatch
 import json
 import re
@@ -76,7 +77,11 @@ class GeneralTools:
         content = arguments.get("content")
         if not isinstance(content, str):
             raise ToolError("content is required")
-        denied = self._require_permission("write_file", f"写入 {self._display_path(path)} ({len(content)} 字符)")
+        old_text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        detail = self._diff_preview(old_text, content, self._display_path(path))
+        denied = self._require_permission(
+            "write_file", f"写入 {self._display_path(path)} ({len(content)} 字符)", detail
+        )
         if denied is not None:
             self._log("write_file", {"path": arguments.get("path")}, "denied", denied)
             return denied
@@ -116,11 +121,13 @@ class GeneralTools:
             raise ToolError("old_string not found in file")
         if occurrences > 1:
             raise ToolError(f"old_string matches {occurrences} locations; provide more context")
-        denied = self._require_permission("edit_file", f"编辑 {self._display_path(path)}")
+        new_text = text.replace(old_string, new_string, 1)
+        detail = self._diff_preview(text, new_text, self._display_path(path))
+        denied = self._require_permission("edit_file", f"编辑 {self._display_path(path)}", detail)
         if denied is not None:
             self._log("edit_file", {"path": arguments.get("path")}, "denied", denied)
             return denied
-        path.write_text(text.replace(old_string, new_string, 1), encoding="utf-8")
+        path.write_text(new_text, encoding="utf-8")
         result = json.dumps({"path": self._display_path(path), "replacements": 1}, ensure_ascii=False)
         self._log("edit_file", {"path": arguments.get("path")}, "ok", result)
         return result
@@ -286,11 +293,34 @@ class GeneralTools:
                     continue
         return path.as_posix()
 
-    def _require_permission(self, tool_name: str, summary: str) -> str | None:
+    def _require_permission(self, tool_name: str, summary: str, detail: str | None = None) -> str | None:
         """Return a denial payload when the permission gate rejects the call."""
-        if self.permissions.request(tool_name, summary):
+        if self.permissions.request(tool_name, summary, detail):
             return None
         return json.dumps(
             {"denied": f"用户未批准 {tool_name}: {summary}", "hint": "可在 chat 中用 /auto 开启自动批准"},
             ensure_ascii=False,
         )
+
+    @staticmethod
+    def _diff_preview(old_text: str, new_text: str, path: str, max_lines: int = 30) -> str:
+        """Unified diff shown in the permission prompt before approving a write."""
+        if not old_text:
+            lines = new_text.splitlines()
+            shown = [f"+{line}" for line in lines[:max_lines]]
+            if len(lines) > max_lines:
+                shown.append(f"… 其余 {len(lines) - max_lines} 行省略")
+            return "\n".join([f"新文件 {path} ({len(lines)} 行):"] + shown)
+        diff = list(
+            difflib.unified_diff(
+                old_text.splitlines(),
+                new_text.splitlines(),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+                lineterm="",
+            )
+        )
+        if len(diff) > max_lines:
+            omitted = len(diff) - max_lines
+            diff = diff[:max_lines] + [f"… 其余 {omitted} 行省略"]
+        return "\n".join(diff)

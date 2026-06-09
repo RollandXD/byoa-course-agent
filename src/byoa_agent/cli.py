@@ -25,27 +25,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WORKSPACE = PROJECT_ROOT.parent
 
 
-class StreamRenderer:
-    """Print streamed text and Claude Code style tool lines without overlap."""
-
-    def __init__(self, color: bool) -> None:
-        self.color = color
-        self.midline = False
-
-    def on_text(self, chunk: str) -> None:
-        print(chunk, end="", flush=True)
-        self.midline = not chunk.endswith("\n")
-
-    def on_tool_call(self, name: str, arguments: dict) -> None:
-        if self.midline:
-            print()
-            self.midline = False
-        print(ui.tool_call_line(name, arguments, self.color))
-
-    def on_tool_result(self, name: str, raw_result: str) -> None:
-        print(ui.tool_result_line(raw_result, self.color))
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="byoa_agent",
@@ -96,12 +75,12 @@ def _main(argv: list[str] | None = None) -> int:
         return 0
 
     color = ui.supports_color()
-    renderer = StreamRenderer(color)
+    display = ui.TurnDisplay(color)
     interactive = sys.stdin.isatty()
     if args.yes:
         gate = PermissionGate(mode="auto")
     else:
-        prompter = _make_prompter(color) if interactive else None
+        prompter = _make_prompter(color, display) if interactive else None
         gate = PermissionGate(mode="ask", prompter=prompter)
 
     try:
@@ -110,7 +89,9 @@ def _main(argv: list[str] | None = None) -> int:
         if command == "chat":
             toolbox = AgentToolbox(DEFAULT_WORKSPACE, project_root=PROJECT_ROOT, permissions=gate)
             session = ChatSession(None, toolbox, PROJECT_ROOT)
-            banner = ui.banner("offline", str(DEFAULT_WORKSPACE), len(create_tool_schemas()), color)
+            banner = ui.banner(
+                "offline", str(DEFAULT_WORKSPACE), len(create_tool_schemas()), color
+            )
             print(f"[offline] {exc}")
             run_chat(session, banner=banner)
             return 0
@@ -127,30 +108,41 @@ def _main(argv: list[str] | None = None) -> int:
         log_path=log_path,
         system_prompt=system_prompt,
         permissions=gate,
-        on_text=renderer.on_text,
-        on_tool_call=renderer.on_tool_call,
-        on_tool_result=renderer.on_tool_result,
+        on_text=display.on_text,
+        on_tool_call=display.on_tool_call,
+        on_tool_result=display.on_tool_result,
     )
 
     try:
         if command == "chat":
-            session = ChatSession(agent, agent.toolbox, PROJECT_ROOT, stream_output=True)
-            banner = ui.banner(config.model, str(config.workspace), len(create_tool_schemas()), color)
+            session = ChatSession(agent, agent.toolbox, PROJECT_ROOT, display=display)
+            banner = ui.banner(
+                config.model, str(config.workspace), len(create_tool_schemas()), color
+            )
             run_chat(session, banner=banner)
             return 0
         demo_prompt = read_prompt_file(PROJECT_ROOT / "prompts" / "demo.md", DEMO_PROMPT)
         prompt = demo_prompt if command == "demo" else args.prompt
-        agent.run_turn(prompt)
-        print(f"\n\n[tool log] {log_path}")
+        display.begin_turn()
+        try:
+            agent.run_turn(prompt)
+        finally:
+            display.end_turn(agent.context_stats())
+        print(f"\n[tool log] {log_path}")
         return 0
     except DeepSeekError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
 
-def _make_prompter(color: bool):
-    def prompter(summary: str) -> str:
-        question = ui.paint(f"允许 {summary} ? [y/n/a(lways)] ", ui.YELLOW, color)
+def _make_prompter(color: bool, display: ui.TurnDisplay):
+    def prompter(text: str) -> str:
+        display.spinner.stop()
+        lines = text.splitlines()
+        head, detail = lines[0], lines[1:]
+        if detail:
+            print(ui.colorize_diff("\n".join(detail), color))
+        question = ui.paint(f"允许 {head} ? [y/n/a(lways)] ", ui.YELLOW, color)
         try:
             return input(question)
         except EOFError:

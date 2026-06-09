@@ -139,6 +139,53 @@ class AgentSessionTests(unittest.TestCase):
         self.assertEqual(len(session.messages), 1)
         self.assertEqual(session.messages[0]["role"], "system")
 
+    def test_keyboard_interrupt_rolls_back_the_partial_turn(self):
+        class InterruptingClient:
+            def chat(self, messages, tools):
+                raise KeyboardInterrupt
+
+            def chat_stream(self, messages, tools, on_text):
+                raise KeyboardInterrupt
+
+        session = AgentSession(
+            InterruptingClient(), AgentToolbox(COURSE_ROOT, project_root=ROOT), stream=False
+        )
+
+        with self.assertRaises(KeyboardInterrupt):
+            session.run_turn("会被中断的问题")
+
+        self.assertEqual(len(session.messages), 1)
+        self.assertEqual(session.messages[0]["role"], "system")
+
+    def test_compact_now_compresses_all_tool_outputs(self):
+        client = FakeClient(
+            [
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [tool_call("list_files", {"pattern": "*.pptx"})],
+                },
+                {"role": "assistant", "content": "完成"},
+            ]
+        )
+        session = AgentSession(client, AgentToolbox(COURSE_ROOT, project_root=ROOT), stream=False)
+        session.run_turn("找课件")
+
+        stats = session.compact_now()
+
+        self.assertEqual(stats["compacted"], 1)
+        tool_messages = [m for m in session.messages if m.get("role") == "tool"]
+        self.assertEqual(tool_messages[0]["content"], COMPACTION_NOTE)
+
+    def test_context_stats_report_the_budget(self):
+        client = FakeClient([{"role": "assistant", "content": "ok"}])
+        session = AgentSession(client, AgentToolbox(COURSE_ROOT, project_root=ROOT), stream=False)
+
+        stats = session.context_stats()
+
+        self.assertIn("max_chars", stats)
+        self.assertGreater(stats["max_chars"], 0)
+
     def test_streaming_path_emits_text_chunks(self):
         client = FakeClient([{"role": "assistant", "content": "流式回答"}])
         chunks = []

@@ -2,7 +2,19 @@
 
 这是「软件产品综合研发实践」实验二（Bring Your Own Agent）的代码仓库：**BYOA Code**，一个 Claude Code 风格的终端编码 agent，由 DeepSeek Function Calling 驱动。
 
-它不是泛用聊天机器人，也不是网页应用。运行 `python -m byoa_agent` 直接进入一个持续多轮对话的 agent shell：模型在回答前会自主调用本地工具读取真实文件、搜索代码、执行命令，工具调用以 `⏺ tool(args)` 形式实时渲染，回答内容流式输出，写文件和执行命令需要经过权限确认——与 Claude Code 的交互方式一致。
+它不是泛用聊天机器人，也不是网页应用。运行 `python -m byoa_agent` 直接进入一个持续多轮对话的 agent shell：模型在回答前会自主调用本地工具读取真实文件、搜索代码、执行命令，工具调用以 `⏺ tool(args)` 形式实时渲染，回答流式渲染为高亮 Markdown，写文件前展示彩色 diff 并等待权限确认——与 Claude Code 的交互方式一致。
+
+## 终端体验
+
+- **流式 Markdown 渲染**：标题、粗体、行内代码、代码块边框、列表、引用、表格全部 ANSI 高亮，边流式边渲染。
+- **思考动画**：等待模型时显示 `✻ 思考中… (2.3s)` spinner，输出到达即清除。
+- **diff 权限预览**：`write_file` / `edit_file` 在批准前先展示红绿 unified diff，新文件展示内容预览。
+- **回合状态栏**：每轮结束显示 `⏱ 耗时 · ⚒ 工具调用数 · ◔ 上下文占用%`。
+- **`@文件` 引用**：在输入里写 `@README.md` 自动把文件内容附加进提问。
+- **`!命令` 直通**：`!git status` 绕过模型直接执行 shell 命令。
+- **Ctrl+C 中断**：打断当前回合并回滚本轮消息，而不是退出 shell；空提示符下 Ctrl+C 才退出。
+- **readline 历史**：方向键翻阅历史输入，持久化在 `~/.byoa_code_history`。
+- **CJK 对齐 banner**：按东亚字宽计算的圆角启动框。
 
 ## 架构
 
@@ -79,10 +91,14 @@ python -m byoa_agent
 /report   生成报告材料
 /demo     运行固定演示流程
 /clear    清空对话上下文
+/compact  压缩历史工具输出
 /auto     切换写操作自动批准
 /context  查看上下文用量
 /help     查看命令说明
 /exit     退出
+
+@文件名   把文本文件内容附加进提问，例如：@README.md 帮我精简这份文档
+!命令     绕过模型直接执行 shell 命令，例如：!git status
 ```
 
 非交互命令：
@@ -107,8 +123,8 @@ python -m byoa_agent --yes ask "把测试跑一遍"  # 自动批准写操作/命
 建议报告截图：
 
 1. `python -m byoa_agent` 启动 banner + `/tools`，展示 Claude Code 风格界面和 11 个工具。
-2. 自然语言提问「实验二要交什么」，展示 `⏺ extract_pptx_text(...)` 流式工具调用轨迹。
-3. 让 agent 执行「把单元测试跑一遍」，展示 `run_command` 的权限确认 `[y/n/a]` 交互。
+2. 自然语言提问「实验二要交什么」，展示 `✻ 思考中` spinner、`⏺ extract_pptx_text(...)` 工具轨迹和 Markdown 渲染的回答。
+3. 让 agent 修改文件，展示批准前的红绿 diff 预览与 `[y/n/a]` 权限确认。
 4. `/check` 与 `/log`，展示 PASS/WARN/FAIL 自检和 JSONL 工具调用证据。
 
 ## Tests
@@ -117,4 +133,4 @@ python -m byoa_agent --yes ask "把测试跑一遍"  # 自动批准写操作/命
 python -m unittest discover -s tests
 ```
 
-53 个用例覆盖：工具沙箱与权限门、SSE 流式增量重组、会话记忆与上下文压缩、斜杠命令、CLI 冒烟和报告生成。
+75 个用例覆盖：工具沙箱与权限门、diff 预览、SSE 流式增量重组、会话记忆与上下文压缩、中断回滚、Markdown 渲染、斜杠命令、`@文件`/`!命令`、CLI 冒烟和报告生成。

@@ -144,6 +144,40 @@ class PermissionTests(unittest.TestCase):
             self.assertEqual(gate.mode, "auto")
             self.assertTrue((Path(tmp) / "two.txt").exists())
 
+    def test_edit_permission_prompt_includes_diff_preview(self):
+        captured = []
+
+        def prompter(question: str) -> str:
+            captured.append(question)
+            return "y"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "a.txt").write_text("hello world\n", encoding="utf-8")
+            gate = PermissionGate(mode="ask", prompter=prompter)
+            toolbox = AgentToolbox(COURSE_ROOT, project_root=project_root, permissions=gate)
+
+            toolbox.edit_file({"path": "a.txt", "old_string": "hello", "new_string": "hi"})
+
+        self.assertIn("-hello world", captured[0])
+        self.assertIn("+hi world", captured[0])
+
+    def test_new_file_permission_prompt_shows_content_preview(self):
+        captured = []
+
+        def prompter(question: str) -> str:
+            captured.append(question)
+            return "y"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            gate = PermissionGate(mode="ask", prompter=prompter)
+            toolbox = AgentToolbox(COURSE_ROOT, project_root=Path(tmp), permissions=gate)
+
+            toolbox.write_file({"path": "b.txt", "content": "line1\nline2"})
+
+        self.assertIn("新文件 b.txt (2 行)", captured[0])
+        self.assertIn("+line1", captured[0])
+
     def test_read_only_tools_skip_the_gate(self):
         gate = PermissionGate(mode="ask", prompter=None)
         toolbox = make_toolbox(permissions=gate)

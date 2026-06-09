@@ -46,7 +46,7 @@ def generate_report_materials(project_root: Path, tools: AgentToolbox) -> str:
 
 ## 2. Agent 简介
 
-本项目实现了 BYOA Code：一个 Claude Code 风格的终端编码 agent，由 DeepSeek Function Calling 驱动。用户通过 `python -m byoa_agent`（默认进入 chat）获得一个持续多轮对话的 agent shell：模型在回答前会自主调用本地工具读取真实文件，工具调用以 `⏺ tool(args)` 形式实时渲染，回答内容流式输出。系统由四层组成：交互 shell（斜杠命令 + 流式渲染）、会话循环（跨轮上下文记忆 + 上下文压缩）、DeepSeek SSE 客户端（增量重组 tool_calls），以及 {tool_count} 个沙箱化本地工具——6 个通用编码工具（read_file/write_file/edit_file/list_files/grep_files/run_command）和 5 个课程技能（PPTX/DOCX 提取、上下文搜索、交付自检、日志摘要）。写文件与执行命令必须经过 Claude Code 式权限确认门（y/n/always），全部实现仅用 Python 标准库。
+本项目实现了 BYOA Code：一个 Claude Code 风格的终端编码 agent，由 DeepSeek Function Calling 驱动。用户通过 `python -m byoa_agent`（默认进入 chat）获得一个持续多轮对话的 agent shell：模型在回答前会自主调用本地工具读取真实文件，工具调用以 `⏺ tool(args)` 形式实时渲染，回答流式渲染为高亮 Markdown，写文件前展示彩色 diff。系统由四层组成：交互 shell（斜杠命令 + 流式渲染）、会话循环（跨轮上下文记忆 + 上下文压缩）、DeepSeek SSE 客户端（增量重组 tool_calls），以及 {tool_count} 个沙箱化本地工具——6 个通用编码工具（read_file/write_file/edit_file/list_files/grep_files/run_command）和 5 个课程技能（PPTX/DOCX 提取、上下文搜索、交付自检、日志摘要）。写文件与执行命令必须经过 Claude Code 式权限确认门（y/n/always），全部实现仅用 Python 标准库。
 
 ## 3. 运行说明
 
@@ -55,8 +55,8 @@ def generate_report_materials(project_root: Path, tools: AgentToolbox) -> str:
 ## 4. 截图建议
 
 1. `python -m byoa_agent` 启动 banner 加 `/tools`，展示 Claude Code 风格界面和 {tool_count} 个工具。
-2. 自然语言提问“实验二要交什么”，展示 `⏺ extract_pptx_text(...)` 流式工具调用轨迹。
-3. 让 agent 执行写操作（如“把测试跑一遍”），展示 `run_command` 的权限确认 `[y/n/a]` 交互。
+2. 自然语言提问“实验二要交什么”，展示 `⏺ extract_pptx_text(...)` 工具轨迹与 Markdown 渲染回答。
+3. 让 agent 修改文件，展示批准前的红绿 diff 预览与 `[y/n/a]` 权限确认。
 4. `/check` 与 `/log` 输出，展示 PASS/WARN/FAIL 自检和 JSONL 工具调用证据。
 
 ## 5. AI 使用反思

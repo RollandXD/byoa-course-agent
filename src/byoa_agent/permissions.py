@@ -15,6 +15,10 @@ class PermissionGate:
     - ``ask``: ask the prompter before each mutating call; without a prompter the
       call is denied so non-interactive runs stay read-only by default.
     - ``auto``: approve everything (the ``--yes`` / ``/auto`` escape hatch).
+
+    The prompter receives a single string: the first line is ``tool: summary``;
+    any following lines are a preview (for example a unified diff) that the
+    prompter may render before asking.
     """
 
     def __init__(self, mode: str = "ask", prompter: Prompter | None = None) -> None:
@@ -23,14 +27,17 @@ class PermissionGate:
         self.mode = mode
         self.prompter = prompter
 
-    def request(self, tool_name: str, summary: str) -> bool:
+    def request(self, tool_name: str, summary: str, detail: str | None = None) -> bool:
         if tool_name not in MUTATING_TOOLS:
             return True
         if self.mode == "auto":
             return True
         if self.prompter is None:
             return False
-        answer = self.prompter(f"{tool_name}: {summary}").strip().lower()
+        question = f"{tool_name}: {summary}"
+        if detail:
+            question = f"{question}\n{detail}"
+        answer = self.prompter(question).strip().lower()
         if answer in {"a", "always"}:
             self.mode = "auto"
             return True

@@ -59,29 +59,38 @@ class AgentSession:
         self.max_context_chars = max_context_chars
         self.stream = stream
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+        self.last_turn_tool_calls = 0
 
     def run_turn(self, user_input: str) -> str:
+        """Run one user turn. On Ctrl+C the partial turn is rolled back so the
+        message list never ends with an unanswered tool call."""
+        checkpoint = len(self.messages)
         self.messages.append({"role": "user", "content": user_input})
+        self.last_turn_tool_calls = 0
         schemas = create_tool_schemas()
         final_text = ""
-        for _turn in range(self.max_turns):
-            message = self._request(schemas)
-            self.messages.append(message)
-            if message.get("content"):
-                final_text = str(message["content"])
-            tool_calls = message.get("tool_calls") or []
-            if not tool_calls:
-                break
-            for call in tool_calls:
-                self.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.get("id") or "call_0",
-                        "content": self._execute(call),
-                    }
-                )
-        else:
-            final_text = final_text or "已达到单轮最大工具调用次数，请把任务拆小后继续。"
+        try:
+            for _turn in range(self.max_turns):
+                message = self._request(schemas)
+                self.messages.append(message)
+                if message.get("content"):
+                    final_text = str(message["content"])
+                tool_calls = message.get("tool_calls") or []
+                if not tool_calls:
+                    break
+                for call in tool_calls:
+                    self.messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call.get("id") or "call_0",
+                            "content": self._execute(call),
+                        }
+                    )
+            else:
+                final_text = final_text or "已达到单轮最大工具调用次数，请把任务拆小后继续。"
+        except KeyboardInterrupt:
+            del self.messages[checkpoint:]
+            raise
         self._compact()
         return final_text
 
@@ -90,7 +99,25 @@ class AgentSession:
 
     def context_stats(self) -> dict[str, int]:
         total = sum(len(str(message.get("content") or "")) for message in self.messages)
-        return {"messages": len(self.messages), "approx_chars": total}
+        return {
+            "messages": len(self.messages),
+            "approx_chars": total,
+            "max_chars": self.max_context_chars,
+        }
+
+    def compact_now(self) -> dict[str, int]:
+        """Manually compress every old tool output, like Claude Code's /compact."""
+        compacted = 0
+        for message in self.messages:
+            if message.get("role") != "tool":
+                continue
+            if len(str(message.get("content") or "")) <= len(COMPACTION_NOTE):
+                continue
+            message["content"] = COMPACTION_NOTE
+            compacted += 1
+        stats = self.context_stats()
+        stats["compacted"] = compacted
+        return stats
 
     def _request(self, schemas: list[dict]) -> dict[str, Any]:
         if self.stream and self.on_text is not None:
@@ -107,6 +134,7 @@ class AgentSession:
             content = self.toolbox.dispatch(tool_name, arguments)
         except (json.JSONDecodeError, ToolError) as exc:
             content = json.dumps({"error": str(exc)}, ensure_ascii=False)
+        self.last_turn_tool_calls += 1
         if self.on_tool_result is not None:
             self.on_tool_result(tool_name, content)
         return content
