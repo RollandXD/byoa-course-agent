@@ -1,8 +1,10 @@
 import os
+import io
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -125,6 +127,17 @@ class CliSmokeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("BYOA Course Agent", result.stdout)
         self.assertIn("/tools", result.stdout)
+
+    def test_main_handles_keyboard_interrupt_without_traceback(self):
+        from byoa_agent import cli
+
+        stream = io.StringIO()
+        with patch("byoa_agent.cli.create_tool_schemas", side_effect=KeyboardInterrupt):
+            with redirect_stdout(stream):
+                code = cli.main(["tools"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("bye", stream.getvalue())
 
     def test_report_command_runs_without_api_key(self):
         env = os.environ.copy()

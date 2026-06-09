@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import signal
 from pathlib import Path
 from typing import Protocol
 
@@ -125,13 +126,26 @@ class ChatSession:
 
 
 def run_chat(session: ChatSession) -> None:
+    previous_sigint = signal.getsignal(signal.SIGINT)
+
+    def handle_sigint(_signum: int, _frame: object) -> None:
+        print("\nbye")
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGINT, handle_sigint)
     print("BYOA Course Agent")
     print(render_help())
-    while True:
-        try:
-            line = input("\nyou > ")
-        except EOFError:
-            print()
-            return
-        if not session.handle_line(line):
-            return
+    try:
+        while True:
+            try:
+                line = input("\nyou > ")
+            except EOFError:
+                print()
+                return
+            except KeyboardInterrupt:
+                print("\nbye")
+                return
+            if not session.handle_line(line):
+                return
+    finally:
+        signal.signal(signal.SIGINT, previous_sigint)

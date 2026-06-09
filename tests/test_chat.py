@@ -1,13 +1,16 @@
 import json
+import io
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from byoa_agent.chat import ChatSession, render_check_result, render_help
+from byoa_agent.chat import ChatSession, render_check_result, render_help, run_chat
 from byoa_agent.tools import CourseAgentTools
 
 
@@ -80,6 +83,20 @@ class ChatSessionTests(unittest.TestCase):
         keep_running = session.handle_line("/exit")
 
         self.assertFalse(keep_running)
+
+    def test_ctrl_c_exits_without_traceback(self):
+        session = ChatSession(
+            agent=None,
+            tools=CourseAgentTools(COURSE_ROOT, project_root=ROOT),
+            project_root=ROOT,
+            output=[],
+        )
+        stream = io.StringIO()
+
+        with patch("builtins.input", side_effect=KeyboardInterrupt), redirect_stdout(stream):
+            run_chat(session)
+
+        self.assertIn("bye", stream.getvalue())
 
 
 if __name__ == "__main__":
