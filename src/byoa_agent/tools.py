@@ -256,9 +256,9 @@ class CourseAgentTools:
             ),
             self._check(
                 "tool_log",
-                "Tool log exists",
-                self._project_path("runs/latest.jsonl").is_file(),
-                "Run /demo or chat once to refresh logs.",
+                "Tool log directory exists",
+                self._project_path("runs").is_dir(),
+                "Run /demo or chat once to refresh runs/latest.jsonl.",
                 warn=True,
             ),
             self._check(
