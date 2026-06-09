@@ -12,28 +12,28 @@
 
 https://github.com/RollandXD/byoa-course-agent
 
-该仓库包含 Agent 主逻辑、工具定义、核心 prompt、README、测试用例和报告草稿。其中核心 prompt 位于 `prompts/system.md` 和 `prompts/demo.md`。
+该仓库包含 Agent 主循环、工具注册表、核心 prompt（`prompts/system.md` 和 `prompts/demo.md`）、README、53 个单元测试和报告草稿。
 
 ## 4. Agent 简介（不超过 500 字）
 
-我设计的 Agent 是一个面向实验二 BYOA 作业的交互式课程助手，主界面是终端里的 `python -m byoa_agent chat`，形式上接近 Claude Code / Codex CLI 的连续对话 shell。它不是泛泛聊天工具，而是专门服务本次实验交付：读取课程 PPT 和实验报告模板，检查代码仓库是否满足评分要求，汇总工具调用日志，并生成报告材料。
+我实现的 Agent 叫 BYOA Code：一个 Claude Code 风格的终端编码 agent，由 DeepSeek OpenAI 兼容 Function Calling 驱动，全部代码只用 Python 标准库。运行 `python -m byoa_agent` 即进入持续多轮对话的 agent shell：模型回答前自主调用本地工具读取真实文件，工具调用以 `⏺ tool(args)` 行实时渲染，回答流式输出，写文件和执行命令需按 `[y/n/a]` 确认——交互方式与 Claude Code 一致。
 
-系统结构分为三层：第一层是 CLI 交互界面，负责接收 `/tools`、`/check`、`/log`、`/report` 等命令；第二层是 DeepSeek OpenAI-compatible Function Calling，负责判断是否需要调用工具；第三层是本地工具集合，负责读取文件和生成证据。项目实现了 7 个工具，包括课程文件列举、项目文件检查、PPTX/DOCX 文本提取、上下文搜索、提交自检和日志摘要。这样 Agent 的回答会先连接本地资料和仓库状态，再生成结果，而不是只依赖模型记忆。
+系统分四层：交互 shell 提供斜杠命令、流式渲染与权限确认；会话循环保存跨轮对话历史，上下文过长时自动压缩旧的工具输出；DeepSeek SSE 客户端把流式响应中分片到达的 tool_calls 增量重组成完整调用；最底层是 11 个沙箱化工具——6 个通用编码工具（读/写/编辑文件、glob 列举、正则搜索、执行命令）加 5 个课程技能（PPTX/DOCX 提取、上下文搜索、交付自检、日志摘要），远超实验要求的 2 个技能。读取限制在课程工作区内，写入和命令限制在仓库内且必须通过权限门，所有调用写入 `runs/latest.jsonl` 形成可审计证据。
 
-【图 1：Agent 结构图，可画为“用户 -> CLI chat -> DeepSeek -> Function Calling -> 本地工具 -> 课件/模板/日志 -> 回答/报告”】
+【图 1：Agent 结构图，可画为「用户 ❯ 输入 → chat shell（斜杠命令/流式渲染/权限门）→ AgentSession（多轮记忆/上下文压缩）→ DeepSeek Function Calling（SSE）→ 11 个本地工具 → 课件/仓库/命令 → 回答+JSONL 日志」】
 
 ## 5. Agent 运行说明（不超过 500 字）
 
-运行前在项目根目录配置 `.env` 中的 `DEEPSEEK_API_KEY`，再执行 `python -m byoa_agent chat` 进入交互界面。进入后可以使用 `/tools` 查看 7 个工具 schema，使用 `/check` 检查 README、prompt、源码、测试、报告草稿和日志目录是否齐全，使用 `/log` 汇总 `runs/latest.jsonl` 中的工具调用记录，使用 `/report` 生成实验报告材料，也可以直接输入自然语言问题，例如“实验二要交什么”。
+运行前把 `.env.example` 复制为 `.env` 并填入 `DEEPSEEK_API_KEY`，然后执行 `python -m byoa_agent`（chat 是默认命令）进入交互 shell。直接输入自然语言任务，例如「读一下课件里实验二的要求，再检查这个仓库还缺什么」，agent 会自动串联多个工具后作答。斜杠命令：`/tools` 看工具列表，`/check` 做 PASS/WARN/FAIL 交付自检，`/log` 汇总调用日志，`/report` 生成报告材料，`/auto` 切换写操作自动批准，`/clear` 清空上下文。非交互场景可用 `ask`/`check`/`report`/`demo`/`tools` 子命令，`--yes` 跳过权限确认。
 
-建议在报告中放 4 张截图：图 2 为 chat 启动和 `/tools` 输出，证明 Agent 有交互界面和多个工具；图 3 为自然语言提问触发 `extract_pptx_text`，证明它读取了 `Week 13-15.pptx` 第 136-137 页；图 4 为 `/check` 输出 8/8 PASS，证明交付物完整；图 5 为 `/report` 或 `/log` 输出，证明 Agent 能生成报告材料并保留工具调用证据。
+报告放 4 张截图：图 2 启动 banner 加 `/tools`，展示界面与 11 个工具；图 3 提问触发 `⏺ extract_pptx_text(...)` 流式调用，证明读取了课件第 136-137 页的真实要求；图 4 让 agent 跑测试时 `run_command` 的 `[y/n/a]` 权限确认与用例全部通过；图 5 `/check` 8/8 PASS 与 `/log` 的 JSONL 证据摘要。
 
 ## 6. 使用 AI 完成实验任务的过程与反思
 
-本次实验中，我把 AI 当作结对开发助手使用，主要让它帮助我设计 Agent 的整体结构、Function Calling 请求格式、工具 schema、命令行入口、单元测试和报告材料。AI 在生成样板代码方面效率很高，例如 CLI 子命令、JSON Schema 字典、PPTX/DOCX 文本提取函数都可以快速形成初版。但我也发现，如果不让它读取真实文件，它很容易把“看起来合理”的内容写进项目。
+本次实验我把 AI 当作结对开发助手，经历了两个阶段：先用 AI 快速搭出一个单轮问答式的课程助手，再让它把项目重构成 Claude Code 风格的多轮 agent。样板代码（CLI 子命令、JSON Schema 字典、PPTX/DOCX 解析、测试骨架）AI 生成得又快又好，但每个阶段都暴露了具体的技术坑。
 
-开发时遇到的第一个具体问题是文件路径。AI 起初默认实验一报告 DOCX 位于当前实验二目录，可实际课程目录已经拆成 `lab/01` 和 `lab/02`，测试因此直接报 `FileNotFoundError`。我没有简单删掉这个测试，而是让测试同时搜索当前目录和 `lab/01`，这样既保留了身份信息提取能力，也适配了真实课程目录。第二个问题是命令和依赖幻觉。AI 曾倾向于提到 Pydantic、pytest 或某些不存在的运行命令，但项目实际只用了 Python 标准库、unittest 和手写 JSON Schema。如果这些内容写进 README 或报告，老师复现时就会对不上。
+第一个坑是流式协议的语法细节。DeepSeek 的 SSE 流式响应中，tool_calls 不是一次性给出的，而是按 index 分片到达：第一个分片带 id 和函数名，后续分片只带 arguments 的字符串片段。AI 最初生成的代码对每个分片直接做 `json.loads`，必然解析失败。我让它先打印原始 SSE 流观察真实格式，才改成按 index 维护槽位、把 arguments 逐段拼接、流结束后再整体解析的写法，并用伪造的 SSE 分片序列写了单元测试固定这个行为。
 
-为了解决这些问题，我把“先检查真实状态”做成了 Agent 的一部分。项目增加了 `list_project_files`，让模型能看到仓库里到底有哪些文件；增加了 `check_submission_readiness`，用 PASS/WARN/FAIL 检查 README、prompt、源码、测试、报告和日志目录；增加了 `summarize_tool_log`，把 JSONL 调用记录整理成可以放进报告的证据。工具层还限制只能读取课程工作区内的文件，避免路径越界。
+第二个坑是上下文管理。最初版本每问一句就丢掉历史，agent 无法引用上一轮的工具结果，完全不像 Claude Code；改成持久会话后，PPTX 全文这类大工具输出又会让上下文迅速膨胀。最终方案是保留全部对话结构，只在总字符数超限时把最旧的大段工具输出替换成压缩占位符。
 
-最后，我用 unittest 固定关键行为，包括 PPTX/DOCX 提取、工具 schema 数量、CLI 命令、自检结果、报告生成，以及 `Ctrl+C` 退出不会打印 traceback。通过这些处理，我对 AI 生成的代码做了一轮真实工程化约束。我的体会是，BYOA 的重点不是“让大模型多说几句话”，而是给它明确的工具、上下文和验证机制。只有这样，Agent 的输出才更像可复现的软件结果，而不是一次性的聊天回答。
+第三个坑是幻觉与错误假设。AI 曾默认实验一报告和实验二在同一目录（实际课程目录拆成 lab/01 和 lab/02），也曾在文档里提到项目并未使用的 Pydantic 和 pytest。我的对策是把「先查真实状态」做进 agent 本身：路径沙箱、`check_submission_readiness` 自检、JSONL 日志，再用 53 个 unittest 用例锁定关键行为，并在 system prompt 中明确列出「项目事实」禁止模型编造命令。我的体会是：BYOA 的核心不是让模型多说话，而是用工具、沙箱、权限和测试把它的输出约束成可复现、可审计的软件行为。

@@ -9,23 +9,23 @@
 
 ## 2. Agent 简介
 
-本项目实现了一个面向“软件产品综合研发实践”实验二的交互式 BYOA 课程助手。它采用命令行终端作为交互界面，用户可以通过 `python -m byoa_agent chat` 进入类似 Claude Code / Codex CLI 的连续对话环境，也可以使用 `/tools`、`/check`、`/log`、`/report`、`/demo` 等固定命令获取稳定输出。Agent 的大模型部分使用 DeepSeek Function Calling，本地工具负责读取课程 PPT、实验报告模板、项目仓库文件和 JSONL 工具调用日志。当前项目暴露 7 个工具，超过实验要求的至少 2 个工具，并通过自检工具把 README、prompt、source code、tests、报告草稿和运行日志等交付证据串联起来。
+本项目实现了 BYOA Code：一个 Claude Code 风格的终端编码 agent，由 DeepSeek Function Calling 驱动。用户通过 `python -m byoa_agent`（默认进入 chat）获得一个持续多轮对话的 agent shell：模型在回答前会自主调用本地工具读取真实文件，工具调用以 `⏺ tool(args)` 形式实时渲染，回答内容流式输出。系统由四层组成：交互 shell（斜杠命令 + 流式渲染）、会话循环（跨轮上下文记忆 + 上下文压缩）、DeepSeek SSE 客户端（增量重组 tool_calls），以及 11 个沙箱化本地工具——6 个通用编码工具（read_file/write_file/edit_file/list_files/grep_files/run_command）和 5 个课程技能（PPTX/DOCX 提取、上下文搜索、交付自检、日志摘要）。写文件与执行命令必须经过 Claude Code 式权限确认门（y/n/always），全部实现仅用 Python 标准库。
 
 ## 3. 运行说明
 
-运行前在 `.env` 中配置 `DEEPSEEK_API_KEY`。常用命令包括：`python -m byoa_agent tools` 查看工具 schema，`python -m byoa_agent chat` 启动交互式 agent shell，`python -m byoa_agent check` 检查交付状态，`python -m byoa_agent report` 生成报告材料，`python -m byoa_agent demo` 运行固定演示流程。运行过程中，Agent 会根据问题选择调用 `extract_pptx_text`、`extract_docx_text`、`check_submission_readiness`、`summarize_tool_log` 等工具，并将工具调用写入 `runs/latest.jsonl`。当前自检结果为 8/8 项通过，另有 0 项提醒、0 项失败；最近工具日志包含 10 次调用。
+运行前在 `.env` 中配置 `DEEPSEEK_API_KEY`，然后执行 `python -m byoa_agent` 进入交互 shell。常用命令：`/tools` 查看 11 个工具，`/check` 检查交付状态，`/log` 汇总工具日志，`/report` 生成报告材料，`/auto` 切换写操作自动批准，`/clear` 清空上下文。也可以直接输入自然语言任务，例如“读一下课件里实验二的要求，然后检查这个仓库还缺什么”，agent 会连续调用 `extract_pptx_text`、`check_submission_readiness` 等工具并把调用写入 `runs/latest.jsonl`。当前自检结果为 8/8 项通过，另有 0 项提醒、0 项失败；最近工具日志包含 0 次调用。
 
 ## 4. 截图建议
 
-1. `python -m byoa_agent chat` 后输入 `/tools`，展示交互式界面和 Function Calling 工具 schema。
-2. 在 chat 中提问“实验二要交什么”，展示 `extract_pptx_text` 读取 `Week 13-15.pptx` 的工具调用。
-3. 输入 `/check`，展示 PASS/WARN/FAIL 自检结果，证明项目按 rubric 检查交付完整性。
-4. 输入 `/report` 或 `/log`，展示工具日志摘要和报告材料生成过程。
+1. `python -m byoa_agent` 启动 banner 加 `/tools`，展示 Claude Code 风格界面和 11 个工具。
+2. 自然语言提问“实验二要交什么”，展示 `⏺ extract_pptx_text(...)` 流式工具调用轨迹。
+3. 让 agent 执行写操作（如“把测试跑一遍”），展示 `run_command` 的权限确认 `[y/n/a]` 交互。
+4. `/check` 与 `/log` 输出，展示 PASS/WARN/FAIL 自检和 JSONL 工具调用证据。
 
 ## 5. AI 使用反思
 
-本实验中，我使用 AI 辅助搭建 DeepSeek Function Calling 请求、工具 schema、CLI 入口、测试用例和报告材料。过程中遇到的主要问题不是“代码写不出来”，而是 AI 容易根据旧上下文做错误假设：例如早期测试默认实验一报告 DOCX 位于当前实验二目录，但实际课程文件已经拆到 `lab/01` 和 `lab/02`；AI 也曾倾向于提到项目并未使用的 Pydantic、pytest 或不存在的命令。为了解决这些问题，我把 agent 约束为先读取真实项目文件和课程资料，再回答实验要求；同时加入路径白名单、项目自检工具、JSONL 日志摘要和 unittest 验证。这样最终报告中的结论来自真实仓库状态和工具调用证据，而不是模型凭空补全。
+本实验使用 AI 辅助完成了从单轮问答工具脚本到 Claude Code 风格多轮 agent 的重构。遇到的具体技术困难包括：流式响应中 tool_calls 以增量分片到达，需要按 index 重组 id/name/arguments，否则 JSON 解析必然失败；早期版本每轮丢弃历史导致 agent 无法引用上一轮的工具结果，重构为持久会话后又必须加上下文压缩防止超长。解决方式是为 SSE 重组和会话记忆分别编写 unittest 固定行为，并用权限门把模型的写操作约束在仓库内。
 
 ## 6. 95+ 自查结论
 
-该项目的评分证据链为：课程要求 -> Agent 设计 -> DeepSeek Function Calling 工具 -> 交互式 CLI 运行 -> 自检结果 -> 工具日志 -> AI 反思。代码仓库包含 agent 逻辑、工具定义、prompt、测试、README 和报告草稿；执行截图可以直接覆盖系统机制、Agent 执行和反思三项评分点。
+评分证据链：课程要求 -> Claude Code 式架构设计 -> DeepSeek Function Calling 工具 -> 流式交互执行 -> 权限门与沙箱 -> 自检结果 -> 工具日志 -> AI 反思。代码仓库包含 agent 循环、工具注册表、prompt、测试、README 和报告草稿；执行截图可以直接覆盖系统机制、Agent 执行和反思三项评分点。

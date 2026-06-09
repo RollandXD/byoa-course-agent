@@ -7,9 +7,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from byoa_agent.extractors import extract_docx_text, extract_pptx_text
+from support import find_course_root
 
 
-COURSE_ROOT = ROOT.parent
+COURSE_ROOT = find_course_root(ROOT)
 
 
 def previous_report_path() -> Path:
