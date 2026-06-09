@@ -92,6 +92,40 @@ class CliSmokeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("list_workspace_files", result.stdout)
 
+    def test_check_command_runs_without_api_key(self):
+        env = os.environ.copy()
+        env["DEEPSEEK_API_KEY"] = ""
+
+        result = subprocess.run(
+            [sys.executable, "-m", "byoa_agent", "check"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            env=env,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("BYOA Submission Check", result.stdout)
+
+    def test_chat_shell_starts_without_api_key_for_slash_commands(self):
+        env = os.environ.copy()
+        env["DEEPSEEK_API_KEY"] = ""
+
+        result = subprocess.run(
+            [sys.executable, "-m", "byoa_agent", "chat"],
+            cwd=ROOT,
+            input="/help\n/exit\n",
+            text=True,
+            capture_output=True,
+            check=False,
+            env=env,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("BYOA Course Agent", result.stdout)
+        self.assertIn("/tools", result.stdout)
+
 
 class ReportingTests(unittest.TestCase):
     def test_report_draft_is_saved_with_title(self):
