@@ -84,6 +84,29 @@ def create_tool_schemas() -> list[dict]:
             },
             ["query", "limit"],
         ),
+        _schema(
+            "check_submission_readiness",
+            "Check whether this BYOA project has the repository artifacts required for Experiment 2 submission.",
+            {},
+            [],
+        ),
+        _schema(
+            "summarize_tool_log",
+            "Summarize JSONL tool-call logs into report-friendly execution evidence.",
+            {
+                "path": {
+                    "type": "string",
+                    "description": "Project-relative path to a JSONL tool log such as runs/latest.jsonl.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of calls to include in the summary.",
+                    "minimum": 1,
+                    "maximum": 20,
+                },
+            },
+            ["path", "limit"],
+        ),
     ]
 
 
@@ -110,6 +133,8 @@ class CourseAgentTools:
             "extract_pptx_text": self.extract_pptx_text,
             "extract_docx_text": self.extract_docx_text,
             "search_extracted_context": self.search_extracted_context,
+            "check_submission_readiness": self.check_submission_readiness,
+            "summarize_tool_log": self.summarize_tool_log,
         }
         if name not in registry:
             raise ToolError(f"Unknown tool: {name}")
@@ -188,6 +213,112 @@ class CourseAgentTools:
         self._log("search_extracted_context", arguments, "ok", result)
         return result
 
+    def check_submission_readiness(self, arguments: dict) -> str:
+        schemas = create_tool_schemas()
+        checks = [
+            self._check(
+                "readme",
+                "README.md exists",
+                self._project_path("README.md").is_file(),
+                "README documents the agent interface.",
+            ),
+            self._check(
+                "prompts",
+                "Prompt files exist",
+                self._project_path("prompts/system.md").is_file()
+                and self._project_path("prompts/demo.md").is_file(),
+                "System and demo prompts are included for grading.",
+            ),
+            self._check(
+                "source",
+                "Source package exists",
+                self._project_path("src/byoa_agent").is_dir(),
+                "Agent implementation is present.",
+            ),
+            self._check(
+                "tests",
+                "Unit tests exist",
+                self._project_path("tests").is_dir(),
+                "Tests can be run with unittest.",
+            ),
+            self._check(
+                "tool_count",
+                "At least two tool schemas exist",
+                len(schemas) >= 2,
+                f"{len(schemas)} tool schemas are available.",
+            ),
+            self._check(
+                "report_draft",
+                "Report draft exists",
+                self._project_path("reports/experiment2-draft.md").is_file(),
+                "Report material is present.",
+                warn=True,
+            ),
+            self._check(
+                "tool_log",
+                "Tool log exists",
+                self._project_path("runs/latest.jsonl").is_file(),
+                "Run /demo or chat once to refresh logs.",
+                warn=True,
+            ),
+            self._check(
+                "template",
+                "Experiment 2 template exists",
+                (self.workspace / "综合实践（阶段1）-实验2-实验报告模版.docx").is_file(),
+                "The official report template is readable.",
+                warn=True,
+            ),
+        ]
+        summary = {
+            "total": len(checks),
+            "pass": sum(1 for item in checks if item["status"] == "PASS"),
+            "warn": sum(1 for item in checks if item["status"] == "WARN"),
+            "fail": sum(1 for item in checks if item["status"] == "FAIL"),
+        }
+        result = json.dumps({"summary": summary, "checks": checks}, ensure_ascii=False, indent=2)
+        self._log("check_submission_readiness", arguments, "ok", result)
+        return result
+
+    def summarize_tool_log(self, arguments: dict) -> str:
+        raw_path = str(arguments.get("path") or "runs/latest.jsonl")
+        limit = int(arguments.get("limit", 10))
+        log_path = self._resolve_project_file(raw_path, ".jsonl")
+        calls = []
+        if not log_path.exists():
+            result = json.dumps(
+                {
+                    "summary": {"total_calls": 0, "shown_calls": 0, "tools_used": [], "status": "WARN"},
+                    "calls": [],
+                    "message": f"tool log not found: {raw_path}",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            self._log("summarize_tool_log", arguments, "ok", result)
+            return result
+        for line in log_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            calls.append(
+                {
+                    "tool": entry.get("tool"),
+                    "arguments": entry.get("arguments", {}),
+                    "status": entry.get("status", "unknown"),
+                    "evidence": self._evidence_for_tool(str(entry.get("tool", ""))),
+                }
+            )
+        limited = calls[:limit]
+        summary = {
+            "total_calls": len(calls),
+            "shown_calls": len(limited),
+            "tools_used": sorted({str(call["tool"]) for call in calls if call.get("tool")}),
+            "status": "PASS" if calls else "WARN",
+        }
+        result = json.dumps({"summary": summary, "calls": limited}, ensure_ascii=False, indent=2)
+        self._log("summarize_tool_log", arguments, "ok", result)
+        return result
+
     def _resolve_allowed_file(self, value: object, suffix: str) -> Path:
         if not isinstance(value, str) or not value.strip():
             raise ToolError("path is required")
@@ -201,6 +332,55 @@ class CourseAgentTools:
         if not path.exists() or not path.is_file():
             raise ToolError(f"file not found: {value}")
         return path
+
+    def _project_path(self, relative: str) -> Path:
+        assert self.project_root is not None
+        return self.project_root / relative
+
+    def _resolve_project_file(self, value: str, suffix: str) -> Path:
+        assert self.project_root is not None
+        path = (self.project_root / value).resolve()
+        try:
+            path.relative_to(self.project_root)
+        except ValueError as exc:
+            raise ToolError(f"path is outside project: {value}") from exc
+        if path.suffix.lower() != suffix:
+            raise ToolError(f"expected a {suffix} file: {value}")
+        return path
+
+    @staticmethod
+    def _status(condition: bool, warn: bool = False) -> str:
+        if condition:
+            return "PASS"
+        return "WARN" if warn else "FAIL"
+
+    def _check(
+        self,
+        check_id: str,
+        label: str,
+        condition: bool,
+        detail: str,
+        warn: bool = False,
+    ) -> dict:
+        return {
+            "id": check_id,
+            "label": label,
+            "status": self._status(condition, warn=warn),
+            "detail": detail,
+        }
+
+    @staticmethod
+    def _evidence_for_tool(tool_name: str) -> str:
+        evidence = {
+            "list_workspace_files": "Shows the agent can inspect local course files.",
+            "list_project_files": "Shows the agent can inspect its own repository artifacts.",
+            "extract_pptx_text": "Shows the agent reads course PPT context instead of relying on memory.",
+            "extract_docx_text": "Shows the agent reads report templates or previous reports.",
+            "search_extracted_context": "Shows the agent searches previously loaded context.",
+            "check_submission_readiness": "Shows the agent checks the submission against rubric evidence.",
+            "summarize_tool_log": "Shows the agent can explain its tool-use trace.",
+        }
+        return evidence.get(tool_name, "Shows an external tool call was recorded.")
 
     def _log(self, tool: str, arguments: dict, status: str, result: str) -> None:
         if self.log_path is None:

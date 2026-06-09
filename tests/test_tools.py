@@ -29,6 +29,9 @@ class ToolSchemaTests(unittest.TestCase):
         self.assertIn("extract_docx_text", names)
         self.assertIn("search_extracted_context", names)
         self.assertIn("list_project_files", names)
+        self.assertIn("check_submission_readiness", names)
+        self.assertIn("summarize_tool_log", names)
+        self.assertGreaterEqual(len(names), 7)
         for schema in schemas:
             self.assertEqual(schema["type"], "function")
             self.assertIn("description", schema["function"])
@@ -61,6 +64,20 @@ class ToolSchemaTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["matches"]), 1)
         self.assertIn("Bring Your Own Agent", payload["matches"][0]["text"])
 
+    def test_submission_readiness_reports_project_evidence(self):
+        tools = CourseAgentTools(COURSE_ROOT, project_root=ROOT)
+
+        result = tools.check_submission_readiness({})
+        payload = json.loads(result)
+        checks = {item["id"]: item for item in payload["checks"]}
+
+        self.assertEqual(payload["summary"]["total"], len(payload["checks"]))
+        self.assertEqual(checks["readme"]["status"], "PASS")
+        self.assertEqual(checks["prompts"]["status"], "PASS")
+        self.assertEqual(checks["source"]["status"], "PASS")
+        self.assertEqual(checks["tests"]["status"], "PASS")
+        self.assertEqual(checks["tool_count"]["status"], "PASS")
+
 
 class ToolLoggingTests(unittest.TestCase):
     def test_tool_calls_are_logged_as_json_lines(self):
@@ -74,6 +91,41 @@ class ToolLoggingTests(unittest.TestCase):
             self.assertEqual(entries[0]["tool"], "list_workspace_files")
             self.assertEqual(entries[0]["status"], "ok")
             self.assertIn("Week 13-15.pptx", entries[0]["result_preview"])
+
+    def test_tool_log_summary_counts_jsonl_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            log_path = project_root / "latest.jsonl"
+            log_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "tool": "list_workspace_files",
+                                "arguments": {"pattern": "*.pptx"},
+                                "status": "ok",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "tool": "extract_pptx_text",
+                                "arguments": {"path": "Week 13-15.pptx"},
+                                "status": "ok",
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            tools = CourseAgentTools(COURSE_ROOT, project_root=project_root, log_path=log_path)
+
+            result = tools.summarize_tool_log({"path": "latest.jsonl", "limit": 5})
+            payload = json.loads(result)
+
+            self.assertEqual(payload["summary"]["total_calls"], 2)
+            self.assertIn("extract_pptx_text", payload["summary"]["tools_used"])
+            self.assertEqual(payload["calls"][0]["status"], "ok")
 
 
 if __name__ == "__main__":
